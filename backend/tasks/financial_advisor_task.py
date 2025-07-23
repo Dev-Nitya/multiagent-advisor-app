@@ -1,6 +1,6 @@
 from crewai import Task
 
-from backend.tools.calculator_tool import get_calculator_tool
+from backend.tools.tool_factory import ToolFactory
 
 def create_financial_advisor_task(agent):
     return Task(
@@ -14,5 +14,5 @@ def create_financial_advisor_task(agent):
         """,
         agent=agent,
         input_keys=["idea","market_insights"],
-        tools=[get_calculator_tool()]
+        tools=[ToolFactory.get_calculator_tool()]
     )

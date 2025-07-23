@@ -1,17 +1,8 @@
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Annotated
-from langchain_core.messages import BaseMessage
 
-from backend.agents.market_research_agent import create_market_crew
-from backend.agents.financial_advisor_agent import create_finance_crew
-from backend.agents.product_strategist_agent import create_product_strategy_crew
-from backend.agents.summary_agent import create_summary_crew
+from backend.crews.crew_factory import CrewFactory
 from backend.utils.sanitizer import sanitize_agent_output
-
-market_crew = create_market_crew()
-finance_crew = create_finance_crew()
-product_strategy_crew = create_product_strategy_crew()
-summary_crew = create_summary_crew()
 
 class AgentState(TypedDict):
     idea: str
@@ -26,7 +17,7 @@ def market_node(state: AgentState) -> AgentState:
     retries = state.get("market_retries", 0)
     print(f"🧠 Running market analysis on: {idea}")
 
-    result = market_crew.kickoff(inputs={"idea": idea})
+    result = CrewFactory.get_market_research_crew().kickoff(inputs={"idea": idea})
     sanitized_result = sanitize_agent_output(result)
 
     print(f"Market analysis result: {sanitized_result}")
@@ -37,7 +28,7 @@ def finance_node(state: AgentState) -> AgentState:
     idea = state["idea"]
     print(f"💰 Running financial analysis based on market insights: {market_insights}")
 
-    result = finance_crew.kickoff(inputs={"market_insights": market_insights, "idea": idea})
+    result = CrewFactory.get_financial_analysis_crew().kickoff(inputs={"market_insights": market_insights, "idea": idea})
     sanitized_result = sanitize_agent_output(result)
     return {**state, "financial_analysis": sanitized_result}
 
@@ -46,13 +37,13 @@ def product_node(state: AgentState) -> AgentState:
     financial_insights = state["financial_analysis"]
     print(f"📦 Developing product strategy based on financial insights: {financial_insights}")
 
-    result = product_strategy_crew.kickoff(inputs={"financial_insights": financial_insights, "idea": idea})
+    result = CrewFactory.get_product_strategy_crew().kickoff(inputs={"financial_insights": financial_insights, "idea": idea})
     sanitized_result = sanitize_agent_output(result)
     return {**state, "product_strategy": sanitized_result}
 
 def summary_node(state: AgentState) -> AgentState:
     print(f"📝 Summarizing final output")
-    result = summary_crew.kickoff(inputs={
+    result = CrewFactory.get_summary_crew().kickoff(inputs={
         "market_analysis": state["market_analysis"],
         "financial_analysis": state["financial_analysis"],
         "product_strategy": state["product_strategy"]

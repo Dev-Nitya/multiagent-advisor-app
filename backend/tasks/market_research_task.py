@@ -1,6 +1,6 @@
 from crewai import Task
 
-from backend.tools.search_tool import get_search_tool
+from backend.tools.tool_factory import ToolFactory
 
 def create_market_research_task(agent):
     return Task(
@@ -16,5 +16,5 @@ def create_market_research_task(agent):
         "viability_score": "A number between 0 (not viable) and 10 (very viable)"
         """,
         agent=agent,
-        tools=[get_search_tool()],
+        tools=[ToolFactory.get_search_tool()],
     )
