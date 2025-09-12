@@ -1,12 +1,23 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import os
 
-from backend.api.evaluate_startup import startup_router
-from backend.agents.agent_factory import AgentFactory
-from backend.tools.tool_factory import ToolFactory
-from backend.utils.llm_manager import LLMManager
+from config.redis_cache import cache
+from config.settings import settings
+from config.database import get_db, db_manager
+from api.evaluate_startup import startup_router
+from api.prompt import prompt_router
+from api.cost import cost_router
+from api.admin.prompt_config import admin_router
+from api.auth import router as auth_router
+from agents.agent_factory import AgentFactory
+from agents.tools.tool_factory import ToolFactory
+from utils.llm_manager import LLMManager
+from middleware.rate_limit_middleware import RateLimitMiddleware
+from middleware.cost_monitoring_middleware import CostMonitoringMiddleware
+from config.logging import configure_logging
+from middleware.correlation_id import CorrelationIdMiddleware
+# from scripts.add_created_at import seed_model_pricing
 
 load_dotenv()
 
@@ -16,13 +27,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
+configure_logging()
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React development server
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+app.add_middleware(
+    RateLimitMiddleware,
+    skip_paths=["/docs", "/redoc", "/openapi.json", "/health/live"]
+)
+app.add_middleware(CorrelationIdMiddleware)
+app.add_middleware(
+    CostMonitoringMiddleware
 )
 
 @app.on_event("startup")
@@ -56,6 +78,10 @@ async def shutdown_event():
 
 
 app.include_router(startup_router)
+app.include_router(admin_router)
+app.include_router(auth_router)
+app.include_router(prompt_router)
+app.include_router(cost_router)
 
 @app.get("/health/pool-stats")
 async def get_pool_stats():

@@ -2,7 +2,7 @@ from crewai import Agent, Task, Crew
 from langchain_core.language_models import BaseLLM
 from typing import Optional
 
-from backend.tasks.market_research_task import create_market_research_task
+from agents.tasks.market_research_task import create_market_research_task
 
 def create_market_research_agent(llm: Optional[BaseLLM] = None):
     agent_config = {
@@ -13,7 +13,7 @@ def create_market_research_agent(llm: Optional[BaseLLM] = None):
         "verbose": False,
         "max_iter": 1,
         "output_json": {
-            "summary": "Brief overview of market size, trends, and competition (2-3 sentences).",
+            "summary": "Brief overview of market size, trends, and competition (1-2 sentences).",
             "verdict": "viable / not viable / uncertain",
             "viability_score": "A number between 0 (not viable) and 10 (very viable)"
         }

@@ -1,0 +1,49 @@
+# name: CI
+
+# on:
+#   push:
+#     branches:
+#       - "**"
+#   pull_request:
+#     branches:
+#       - "**"
+
+# jobs:
+#   tests:
+#     name: Run Python tests
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+
+#       - name: Set up Python 3.11
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: "3.11"
+
+#       - name: Cache pip
+#         uses: actions/cache@v4
+#         with:
+#           path: ~/.cache/pip
+#           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+#           restore-keys: |
+#             ${{ runner.os }}-pip-
+
+#       - name: Install dependencies
+#         run: |
+#           set -e
+#           if [ -f backend/requirements.txt ]; then
+#             pip install -r backend/requirements.txt
+#           elif [ -f requirements.txt ]; then
+#             pip install -r requirements.txt
+#           else
+#             pip install pytest
+#           fi
+
+#       - name: Run tests
+#         run: |
+#           set -e
+#           if [ -d backend/tests ]; then
+#             pytest -q backend/tests
+#           else
+#             pytest -q

@@ -2,7 +2,7 @@ from crewai import Agent, Task, Crew
 from langchain_core.language_models import BaseLLM
 from typing import Optional
 
-from backend.tasks.financial_advisor_task import create_financial_advisor_task
+from agents.tasks.financial_advisor_task import create_financial_advisor_task
 
 def create_financial_advisor_agent(llm: Optional[BaseLLM] = None):
     agent_config = {
@@ -14,9 +14,9 @@ def create_financial_advisor_agent(llm: Optional[BaseLLM] = None):
         ),
         "allow_delegation": False,
         "verbose": False,
-        "max_iter": 2,
+        "max_iter": 1,
         "output_json": {
-            "summary": "Summary of cost, revenue model, and ROI potential (2-3 sentences).",
+            "summary": "Summary of cost, revenue model, and ROI potential (1-2 sentences).",
             "verdict": "viable / not viable / uncertain",
             "viability_score": "A number between 0 and 10 based on financial feasibility"
         }

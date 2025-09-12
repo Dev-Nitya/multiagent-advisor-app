@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app:delegated
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - BACKEND_DATA_DIR=/app/backend/data
+    command: >
+      bash -c "pip install --no-cache-dir -r requirements.txt || true &&
+               uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    restart: unless-stopped
+    healthcheck:
+      test: [
+          "CMD-SHELL",
+          "python -c 'import urllib.request,sys; \
+          urllib.request.urlopen(\"http://localhost:8000/health\");' || exit 1",
+        ]
+    labels:
+      com.example.service: "backend"

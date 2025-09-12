@@ -2,7 +2,7 @@ from crewai import Agent, Task, Crew
 from langchain_core.language_models import BaseLLM
 from typing import Optional
 
-from backend.tasks.summary_task import create_summary_task
+from agents.tasks.summary_task import create_summary_task
 
 def create_summary_agent(llm: Optional[BaseLLM] = None):
     agent_config = {
@@ -14,12 +14,13 @@ def create_summary_agent(llm: Optional[BaseLLM] = None):
         ),
         "allow_delegation": False,
         "verbose": True,
+        "max_iter": 1,
         "output_json": {
             "market_verdict": "Copy of verdict from market analysis",
             "financial_verdict": "Copy of verdict from financial analysis",
             "product_verdict": "Copy of verdict from product analysis",
             "final_recommendation": "launch / iterate / abandon",
-            "rationale": "Brief reasoning combining all inputs (3–5 sentences)",
+            "rationale": "Brief reasoning combining all inputs (2-3 sentences)",
             "confidence_score": "0–10 score reflecting how confident the advisor is in the final recommendation"
         }
     }
