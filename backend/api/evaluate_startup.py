@@ -1,3 +1,5 @@
+import asyncio
+from time import time
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Body
 import logging
@@ -11,6 +13,7 @@ from utils.request_context import get_request_context, set_request_context
 from config.prompt_config import is_prompt_sanitization_enabled
 from services.user_prefs_service import get_prompt_sanitization_for_user
 from services.prompt_registry import prompt_registry
+from utils import event_broker_redis as event_broker
 
 startup_router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -40,11 +43,10 @@ async def evaluate_startup(
         except Exception:
             pass
 
-        set_prompt_id(request.global_prompt_id, request.agent_prompt_ids)
-        graph = build_graph()
+        if not request_id:
+            request_id = f"req-{int(time.time() * 1000)}"
 
-        # Ensure request-scoped context includes user_id and request_id so downstream
-        # tools / LLM callbacks can read them even when they execute in other tasks/threads.
+        set_prompt_id(request.global_prompt_id, request.agent_prompt_ids)
         try:
             current_ctx = get_request_context() or {}
             merged = dict(current_ctx or {})
@@ -59,26 +61,22 @@ async def evaluate_startup(
         except Exception:
             pass
 
+        graph = build_graph()
+        # start background task and return immediately with request_id so client can subscribe
+        asyncio.create_task(delegate_graph_run_to_background(graph, request.user_id, request_id, sanitized_idea))
+
         logger.info(f"Invoking graph for request_id: {request_id}, user_id: {request.user_id}")
 
-        try:
-            result = graph.invoke({"idea": sanitized_idea, "user_id": request.user_id, "request_id": request_id})
-        except BudgetExceeded:
-            logger.warning("User budget exceeded during graph run: %s", request.user_id)
-            raise HTTPException(status_code=402, detail="User budget exceeded")
-        except Exception:
-            # let outer handler convert to 500
-            raise
-
-        # Extract and process only the final summary
-        final_summary = result.get("final_summary")
-        processed_summary = process_final_summary(final_summary)
-        
-        if not processed_summary:
-            raise HTTPException(status_code=500, detail="Failed to process final summary")
-        
-        return processed_summary
-        
+        return {
+            "market_verdict": "",
+            "financial_verdict": "",
+            "product_verdict": "",
+            "final_recommendation": "",
+            "rationale": "",
+            "confidence_score": 0,
+            "request_id": request_id
+        }
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
@@ -187,3 +185,47 @@ def set_prompt_id(prompt_id, agent_prompt_ids) -> str | None:
         set_request_context(merged)
     except Exception:
         pass
+
+
+async def delegate_graph_run_to_background(graph, user_id, request_id, sanitized_idea):
+    try:
+        def _run():
+            try:
+                result = graph.invoke({"idea": sanitized_idea, "user_id": user_id, "request_id": request_id})
+
+                # try to read invocation_id from request context (set by crew wrapper for top-level invocation)
+                try:
+                    ctx_after = get_request_context() or {}
+                    invocation_id = ctx_after.get("invocation_id")
+                except Exception:
+                    invocation_id = None
+
+                try:
+                    event_broker.publish_event(request_id, {
+                        "type": "final_result",
+                        "payload": result,
+                        "invocation_id": invocation_id
+                    })
+                except Exception:
+                    pass
+            except Exception as e:
+                try:
+                    event_broker.publish_event(request_id, {"type": "error", "message": str(e)})
+                except Exception:
+                    pass
+
+        # run blocking invoke in threadpool
+        await asyncio.to_thread(_run)
+    finally:
+        try:
+            # include invocation id if available in this thread's request context
+            try:
+                ctx_fin = get_request_context() or {}
+                invocation_id_fin = ctx_fin.get("invocation_id")
+            except Exception:
+                invocation_id_fin = None
+
+            event_broker.publish_event(request_id, {"type": "__COMPLETE__", "invocation_id": invocation_id_fin})
+        except Exception:
+            pass
+

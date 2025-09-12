@@ -16,45 +16,63 @@ class PromptRegistry:
         increment its version number.
         """
         db = next(get_db())
-        existing_prompts = db.query(Prompt).filter(Prompt.name == name).all()
-        if existing_prompts:
-            latest_version = max(p.version for p in existing_prompts)
-            new_version = latest_version + 1
-        else:
-            new_version = 1
+        try:
+            existing_prompts = db.query(Prompt).filter(Prompt.name == name).all()
+            if existing_prompts:
+                latest_version = max(p.version for p in existing_prompts)
+                new_version = latest_version + 1
+            else:
+                new_version = 1
 
-        prompt_hash = self._generate_hash(prompt_text, model_settings, output_schema)
+            prompt_hash = self._generate_hash(prompt_text, model_settings, output_schema)
 
-        new_prompt = Prompt(
-            name=name,
-            version=new_version,
-            prompt_text=prompt_text,
-            model_settings=model_settings,
-            output_schema=output_schema,
-            hash=prompt_hash,
-            author=author,
-            changelog=changelog
-        )
-        db.add(new_prompt)
-        db.commit()
-        db.refresh(new_prompt)
-        return new_prompt
+            new_prompt = Prompt(
+                name=name,
+                version=new_version,
+                prompt_text=prompt_text,
+                model_settings=model_settings,
+                output_schema=output_schema,
+                hash=prompt_hash,
+                author=author,
+                changelog=changelog
+            )
+            db.add(new_prompt)
+            db.commit()
+            db.refresh(new_prompt)
+            return new_prompt
+        except Exception as e:
+            db.rollback()
+            raise e
+        finally:
+            db.close()
     
     def get_prompt_by_id(self, prompt_id: str) -> Prompt:
         db = next(get_db())
-        return db.query(Prompt).filter(Prompt.prompt_id == prompt_id).first()
-    
+        try:
+            return db.query(Prompt).filter(Prompt.prompt_id == prompt_id).first()
+        finally:
+            db.close()
+
     def get_latest_prompt_by_name(self, name: str) -> Prompt:
         db = next(get_db())
-        return db.query(Prompt).filter(Prompt.name == name).order_by(Prompt.version.desc()).first()
-    
+        try:
+            return db.query(Prompt).filter(Prompt.name == name).order_by(Prompt.version.desc()).first()
+        finally:
+            db.close()
+
     def get_latest_prompt_id(self) -> str | None:
         db = next(get_db())
-        latest_prompt = db.query(Prompt).order_by(Prompt.created_at.desc()).first()
-        return latest_prompt.prompt_id if latest_prompt else None
-    
+        try:
+            latest_prompt = db.query(Prompt).order_by(Prompt.created_at.desc()).first()
+            return latest_prompt.prompt_id if latest_prompt else None
+        finally:
+            db.close()
+
     def get_all_prompts(self) -> list[Prompt]:
         db = next(get_db())
-        return db.query(Prompt).all()
-    
+        try:
+            return db.query(Prompt).all()
+        finally:
+            db.close()
+
 prompt_registry = PromptRegistry()

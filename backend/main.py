@@ -10,9 +10,11 @@ from api.prompt import prompt_router
 from api.cost import cost_router
 from api.admin.prompt_config import admin_router
 from api.auth import router as auth_router
+from api.llm_events import llm_events_router
 from agents.agent_factory import AgentFactory
 from agents.tools.tool_factory import ToolFactory
 from utils.llm_manager import LLMManager
+from utils.event_broker_redis import init_redis
 from middleware.rate_limit_middleware import RateLimitMiddleware
 from middleware.cost_monitoring_middleware import CostMonitoringMiddleware
 from config.logging import configure_logging
@@ -66,7 +68,10 @@ async def startup_event():
     ToolFactory.get_search_tool()
     ToolFactory.get_calculator_tool()
 
+    await init_redis(settings.redis_url)
+
     print("✅ Agents and tools warmed up successfully!")
+    print("Redis initialized at:", settings.redis_url)
     print(f"📊 Pool stats: {AgentFactory.get_pool_stats()}")
 
 @app.on_event("shutdown")
@@ -82,6 +87,7 @@ app.include_router(admin_router)
 app.include_router(auth_router)
 app.include_router(prompt_router)
 app.include_router(cost_router)
+app.include_router(llm_events_router)
 
 @app.get("/health/pool-stats")
 async def get_pool_stats():

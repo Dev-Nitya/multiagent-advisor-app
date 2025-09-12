@@ -31,6 +31,8 @@ def compute_cost(model_name: str, prompt_tokens: int, completion_tokens: int) ->
     except Exception:
         logger.exception("compute_cost failed")
         return None
+    finally:
+        db.close()
 
 def _estimate_split(total_tokens: int) -> tuple[int, int, str]:
     # split 85% prompt, 15% completion
@@ -142,6 +144,8 @@ def record_cost_event(
     except Exception:
         logger.info("Failed to record cost_event")
         raise
+    finally:
+        db.close()
 
 # Aggregation helpers
 def apply_request_spend(
@@ -206,6 +210,8 @@ def apply_request_spend(
     except Exception:
         logger.exception("Failed to apply request spend for user=%s (non-fatal)", user_id)
         return False
+    finally:
+        db.close()
 
 def total_spent_by_user_last_n_days(user_id: str, days: int = 7) -> float:
     from sqlalchemy import func, cast
@@ -220,6 +226,8 @@ def total_spent_by_user_last_n_days(user_id: str, days: int = 7) -> float:
     except Exception:
         logger.exception("total_spent_by_user_last_n_days failed")
         return 0.0
+    finally:
+        db.close()
 
 def cost_by_group(request_id: Optional[str] = None, group_by: str = "graph_node_id"):
     """
@@ -239,3 +247,5 @@ def cost_by_group(request_id: Optional[str] = None, group_by: str = "graph_node_
     except Exception:
         logger.exception("cost_by_group failed")
         return {}
+    finally:
+        db.close()

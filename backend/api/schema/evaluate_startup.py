@@ -31,6 +31,7 @@ class EvaluateSummary(BaseModel):
     final_recommendation: Optional[str] = Field(None, description="Final recommendation (go / no-go / pivot / uncertain)")
     rationale: Optional[str] = Field(None, description="Rationale supporting the recommendation")
     confidence_score: float = Field(0.0, ge=0.0, description="Confidence score (numeric, 0.0 or higher)")
+    request_id: Optional[str] = Field(None, description="Echoed request ID for tracking")
 
 # Example request body
 EVALUATE_REQUEST_EXAMPLE: Dict[str, Any] = {

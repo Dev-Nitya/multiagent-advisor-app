@@ -84,6 +84,9 @@ class CostMonitoringService:
         except Exception as e:
             logger.info(f"Budget check error for user {user_id}: {e}")
             return False, "Budget check failed"
+        
+        finally:
+            db.close()
 
     def record_money_spent(self, user_id, actual_cost):
         """
@@ -155,6 +158,9 @@ class CostMonitoringService:
                 db.rollback()
                 db.close()
             return False
+        
+        finally:
+            db.close()
 
     def _check_budget_alerts(self, user_budget: UserBudget):
         """

@@ -13,7 +13,7 @@ cost_router = APIRouter()
 logger = logging.getLogger(__name__)
 
 @cost_router.get('/cost-by-model', summary="Get cost breakdown by model")
-async def get_cost_by_model(db: Session = Depends(get_db)):
+async def get_cost_by_model(user_id: str = Query(..., description="User id to filter costs"), db: Session = Depends(get_db)):
     try:
         q = (
             db.query(
@@ -25,6 +25,8 @@ async def get_cost_by_model(db: Session = Depends(get_db)):
                 func.coalesce(func.sum(CostEvent.prompt_tokens), 0).label("prompt_tokens"),
                 func.coalesce(func.sum(CostEvent.completion_tokens), 0).label("completion_tokens"),
             )
+            .filter(CostEvent.provider == 'openai')
+            .filter(CostEvent.user_id == user_id)
             .group_by(CostEvent.model_name, CostEvent.provider)
             .order_by(func.coalesce(func.sum(CostEvent.cost_snapshot_usd), 0).desc())
         )

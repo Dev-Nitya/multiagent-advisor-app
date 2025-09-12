@@ -4,6 +4,8 @@ import Navigation from './Navigation';
 import axios from 'axios';
 import './AdminPanel.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
 const AdminPanel = () => {
   const { user, logout } = useAuth();
   const [globalSettings, setGlobalSettings] = useState({
@@ -22,7 +24,7 @@ const AdminPanel = () => {
 
   const fetchGlobalSettings = async () => {
     try {
-      const response = await axios.get('/admin/prompt_sanitization');
+      const response = await axios.get(`${API_BASE_URL}/admin/prompt_sanitization`);
       setGlobalSettings(response.data);
     } catch (error) {
       showMessage('error', handleError(error, 'Failed to fetch global settings'));
@@ -37,7 +39,7 @@ const AdminPanel = () => {
 
     setLoading(true);
     try {
-      const response = await axios.get(`/admin/users/${userSettings.user_id}/prompt_sanitization`);
+      const response = await axios.get(`${API_BASE_URL}/admin/users/${userSettings.user_id}/prompt_sanitization`);
       setUserSettings(prev => ({
         ...prev,
         prompt_sanitization: response.data.prompt_sanitization
@@ -53,7 +55,7 @@ const AdminPanel = () => {
   const updateGlobalSettings = async () => {
     setLoading(true);
     try {
-      await axios.post('/admin/prompt_sanitization', {
+      await axios.post(`${API_BASE_URL}/admin/prompt_sanitization`, {
         enabled: globalSettings.prompt_sanitization_enabled
       });
       showMessage('success', 'Global settings updated successfully');
@@ -77,7 +79,7 @@ const AdminPanel = () => {
 
     setLoading(true);
     try {
-      await axios.post(`/admin/users/${userSettings.user_id}/prompt_sanitization`, {
+      await axios.post(`${API_BASE_URL}/admin/users/${userSettings.user_id}/prompt_sanitization`, {
         enabled: userSettings.prompt_sanitization
       });
       showMessage('success', 'User settings updated successfully');

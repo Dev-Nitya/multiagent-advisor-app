@@ -2,10 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import costService from '../services/costService';
 import Navigation from './Navigation';
 import SimpleChart from './SimpleChart';
+import { useAuth } from '../contexts/AuthContext';
 import './CostDashboard.css';
 import './SimpleChart.css';
 
 const CostDashboard = () => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [modelData, setModelData] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,9 +18,14 @@ const CostDashboard = () => {
 
   useEffect(() => {
     const fetchData = async () => {
+      if (!user?.user_id) {
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
-        const modelResult = await costService.getCostByModel();
+        const modelResult = await costService.getCostByModel(user.user_id);
 
         if (modelResult.success) {
           setModelData(modelResult.data);
@@ -31,7 +38,7 @@ const CostDashboard = () => {
     };
 
     fetchData();
-  }, []);
+  }, [user?.user_id]);
 
   // Calculate summary statistics
   const summaryStats = useMemo(() => {
@@ -69,7 +76,7 @@ const CostDashboard = () => {
     // Apply additional filters
     if (filterBy !== 'all') {
       data = data.filter(item => {
-        return item.model_name === filterBy || item.provider === filterBy;
+        return item.model_name === filterBy;
       });
     }
 
@@ -91,11 +98,10 @@ const CostDashboard = () => {
 
   const totalPages = Math.ceil(filteredAndSortedData.length / itemsPerPage);
 
-  // Get unique providers and models for filter dropdown
+  // Get unique models for filter dropdown
   const filterOptions = useMemo(() => {
-    const providers = [...new Set(modelData.map(item => item.provider).filter(Boolean))];
     const models = [...new Set(modelData.map(item => item.model_name).filter(Boolean))];
-    return [...providers, ...models];
+    return models;
   }, [modelData]);
 
   const handlePageChange = (page) => {

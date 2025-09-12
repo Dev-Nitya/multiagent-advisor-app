@@ -26,8 +26,10 @@ class DatabaseManager:
         # SQLite-specific settings for development
         self.engine = create_engine(
             database_url,
-            connect_args={"check_same_thread": False},  # Allow multiple threads
-            echo=False
+            pool_size=20,
+            max_overflow=40,
+            pool_timeout=30,
+            pool_pre_ping=True,
         )
         
         # Create session factory

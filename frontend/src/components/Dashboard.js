@@ -6,6 +6,8 @@ import authService from '../services/authService';
 import promptService from '../services/promptService';
 import './Dashboard.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
 const Dashboard = () => {
   const { user, refreshUser } = useAuth();
   const [idea, setIdea] = useState('');
@@ -16,6 +18,17 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [updatingSettings, setUpdatingSettings] = useState(false);
   const [promptsLoading, setPromptsLoading] = useState(false);
+  
+  // New states for real-time streaming
+  const [streamingEvents, setStreamingEvents] = useState([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [currentRequestId, setCurrentRequestId] = useState(null);
+  const [eventSource, setEventSource] = useState(null);
+  const [agentStates, setAgentStates] = useState({}); // Track agent thinking/finished states
+  const [groupedEvents, setGroupedEvents] = useState({}); // Group events by invocation_id
+  const [agentResults, setAgentResults] = useState({}); // Store results from each agent
+  const [analysisComplete, setAnalysisComplete] = useState(false); // Track if analysis is complete
+  const [currentAgent, setCurrentAgent] = useState(null); // Current active agent
   
   // New states for agent prompt selection
   const [promptSelectionMode, setPromptSelectionMode] = useState('global'); // 'global' or 'agent'
@@ -114,12 +127,16 @@ const Dashboard = () => {
     setLoading(true);
     setError(null);
     setResult(null);
+    setAnalysisComplete(false);
+    setAgentResults({});
+    setCurrentAgent(null);
 
     try {
+      const requestId = `req-${Date.now()}`;
       const requestData = {
         idea: idea.trim(),
         user_id: user.user_id,
-        request_id: `req-${Date.now()}`
+        request_id: requestId
       };
       
       // Add prompt data based on selection mode
@@ -139,11 +156,37 @@ const Dashboard = () => {
         }
       }
 
-      const response = await axios.post('/evaluate', requestData);
-      setResult(response.data);
+      // Start streaming events before making the API call
+      startEventStream(requestId);
+
+      // Make the API call (this will start background processing)
+      const response = await axios.post(`${API_BASE_URL}/evaluate`, requestData);
+      
+      // Use the request_id from response if provided, otherwise use our generated one
+      const actualRequestId = response.data?.request_id || requestId;
+      
+      // If the backend returned a different request_id, restart streaming with correct ID
+      if (actualRequestId !== requestId) {
+        startEventStream(actualRequestId);
+      }
+      
+      console.log('Evaluation started:', response.data);
+      
+      // Add initial event to show evaluation started
+      setStreamingEvents(prev => [...prev, {
+        type: 'info',
+        message: 'Evaluation started, processing your startup idea...',
+        timestamp: new Date().toISOString(),
+        id: `init_${Date.now()}`
+      }]);
+
       // Refresh user profile to update budget usage
       await refreshUser();
+
     } catch (err) {
+      // Stop streaming on error
+      stopEventStream();
+      
       let errorMessage = 'An error occurred while evaluating your startup idea.';
       let errorType = 'general';
       
@@ -278,6 +321,344 @@ const Dashboard = () => {
     // For agent mode, at least one agent should be selected
     return Object.values(agentPrompts).some(promptId => promptId !== '');
   };
+
+  // Helper function to build final result from agent results
+  const buildFinalResultFromAgents = (agentResults) => {
+    const result = {
+      agents: {} // Store individual agent results
+    };
+    
+    // Helper function to extract JSON-like data from potentially malformed strings
+    const extractStructuredData = (text) => {
+      const extracted = {
+        summary: '',
+        verdict: '',
+        viability_score: null,
+        confidence_score: null
+      };
+
+      try {
+        // First try direct JSON parsing
+        const parsed = JSON.parse(text);
+        extracted.summary = parsed.summary || '';
+        extracted.verdict = parsed.verdict || '';
+        extracted.viability_score = parsed.viability_score || null;
+        // Ensure confidence_score is a number
+        if (parsed.confidence_score !== undefined) {
+          extracted.confidence_score = typeof parsed.confidence_score === 'string' 
+            ? parseFloat(parsed.confidence_score) 
+            : parsed.confidence_score;
+        }
+        return extracted;
+      } catch (e) {
+        // If direct parsing fails, try to extract using regex patterns
+        console.log(`Direct JSON parsing failed for text, trying pattern extraction:`, text.substring(0, 200));
+        
+        // Extract summary
+        const summaryMatch = text.match(/"summary":\s*"([^"]+)"/);
+        if (summaryMatch) {
+          extracted.summary = summaryMatch[1];
+        }
+
+        // Extract verdict
+        const verdictMatch = text.match(/"verdict":\s*"([^"]+)"/);
+        if (verdictMatch) {
+          extracted.verdict = verdictMatch[1];
+        }
+
+        // Extract viability_score (handle both quoted and unquoted numbers)
+        const scoreMatch = text.match(/"viability_score":\s*"?(\d+(?:\.\d+)?)"?/);
+        if (scoreMatch) {
+          extracted.viability_score = parseFloat(scoreMatch[1]);
+        }
+
+        // Extract confidence_score (handle both quoted and unquoted numbers)
+        const confidenceMatch = text.match(/"confidence_score":\s*"?(\d+(?:\.\d+)?)"?/);
+        if (confidenceMatch) {
+          extracted.confidence_score = parseFloat(confidenceMatch[1]);
+        }
+
+        // If no structured data found, put everything in summary
+        if (!extracted.summary && !extracted.verdict && extracted.viability_score === null) {
+          extracted.summary = text;
+        }
+
+        return extracted;
+      }
+    };
+    
+    // Process each agent result and parse JSON data
+    Object.entries(agentResults).forEach(([agentName, resultSnippet]) => {
+      const structuredData = extractStructuredData(resultSnippet);
+      
+      // Store the structured result for this agent
+      result.agents[agentName] = {
+        summary: structuredData.summary,
+        verdict: structuredData.verdict,
+        viability_score: structuredData.viability_score,
+        raw: resultSnippet
+      };
+
+      // Legacy fields for backward compatibility
+      const agentMapping = {
+        'Market Research Agent': 'market_verdict',
+        'Financial Advisor': 'financial_verdict', 
+        'Product Strategy Agent': 'product_verdict',
+        'Summary Agent': 'summary'
+      };
+      
+      const resultField = agentMapping[agentName];
+      if (resultField) {
+        result[resultField] = structuredData.summary || resultSnippet;
+      }
+
+      // If this is the Summary Agent, extract overall recommendation
+      if (agentName === 'Summary Agent') {
+        try {
+          const parsed = JSON.parse(resultSnippet);
+          if (parsed.final_recommendation) {
+            result.final_recommendation = parsed.final_recommendation;
+          }
+          if (parsed.rationale) {
+            result.rationale = parsed.rationale;
+          }
+          if (parsed.confidence_score !== undefined) {
+            // Ensure confidence_score is a number
+            result.confidence_score = typeof parsed.confidence_score === 'string' 
+              ? parseFloat(parsed.confidence_score) 
+              : parsed.confidence_score;
+          }
+        } catch (e) {
+          // If Summary Agent doesn't have structured data, that's ok
+        }
+      }
+    });
+
+    return result;
+  };
+
+  // Function to start streaming events
+  const startEventStream = (requestId) => {
+    if (eventSource) {
+      eventSource.close();
+    }
+
+    setStreamingEvents([]);
+    setIsStreaming(true);
+    setCurrentRequestId(requestId);
+    setAgentStates({});
+    setGroupedEvents({});
+    setAgentResults({});
+    setAnalysisComplete(false);
+    setCurrentAgent(null);
+
+    const newEventSource = new EventSource(`${API_BASE_URL}/events/${requestId}`);
+    setEventSource(newEventSource);
+
+    // Track if we've received a complete event to avoid showing connection errors
+    let hasReceivedComplete = false;
+
+    newEventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('Received SSE event:', data);
+        
+        // Generate unique key for grouping/deduplication
+        const groupKey = data.invocation_id || `${requestId}_${data.agent || 'unknown'}`;
+        
+        // Update grouped events for deduplication
+        setGroupedEvents(prev => ({
+          ...prev,
+          [groupKey]: {
+            ...prev[groupKey],
+            ...data,
+            timestamp: data.ts || Date.now()
+          }
+        }));
+
+        // Handle different event types
+        switch (data.type) {
+          case 'agent_started':
+            setCurrentAgent({
+              name: data.agent,
+              status: 'thinking',
+              invocation_id: data.invocation_id,
+              graph_node: data.graph_node,
+              started_at: data.ts
+            });
+            
+            setStreamingEvents(prev => [...prev, {
+              id: `${groupKey}_started_${Date.now()}`,
+              type: 'info',
+              message: `🤖 ${data.agent} is analyzing your idea...`,
+              timestamp: new Date(data.ts || Date.now()).toISOString(),
+              agent: data.agent,
+              invocation_id: data.invocation_id
+            }]);
+            break;
+
+          case 'agent_finished':
+            setCurrentAgent(prev => prev && prev.name === data.agent ? {
+              ...prev,
+              status: 'finished',
+              result_snippet: data.result_snippet,
+              finished_at: data.ts
+            } : prev);
+
+            // Capture the agent result for building final analysis
+            if (data.result_snippet) {
+              setAgentResults(prev => ({
+                ...prev,
+                [data.agent]: data.result_snippet
+              }));
+            }
+            
+            setStreamingEvents(prev => [...prev, {
+              id: `${groupKey}_finished_${Date.now()}`,
+              type: 'success',
+              message: `✅ ${data.agent} completed analysis`,
+              timestamp: new Date(data.ts || Date.now()).toISOString(),
+              agent: data.agent,
+              invocation_id: data.invocation_id,
+              result_snippet: data.result_snippet
+            }]);
+            break;
+
+          case 'error':
+            setStreamingEvents(prev => [...prev, {
+              id: `error_${Date.now()}`,
+              type: 'error',
+              message: `❌ Error: ${data.message || 'Unknown error occurred'}`,
+              timestamp: new Date(data.ts || Date.now()).toISOString(),
+              agent: data.agent,
+              invocation_id: data.invocation_id
+            }]);
+            break;
+
+          default:
+            // Handle any other event types
+            setStreamingEvents(prev => [...prev, {
+              id: `${data.type}_${Date.now()}`,
+              type: 'info',
+              message: data.message || `${data.type} event received`,
+              timestamp: new Date(data.ts || Date.now()).toISOString(),
+              agent: data.agent,
+              invocation_id: data.invocation_id
+            }]);
+        }
+      } catch (error) {
+        console.error('Error parsing SSE event:', error);
+        setStreamingEvents(prev => [...prev, {
+          id: `parse_error_${Date.now()}`,
+          type: 'error',
+          message: '⚠️ Received malformed event data',
+          timestamp: new Date().toISOString()
+        }]);
+      }
+    };
+
+    newEventSource.onerror = (error) => {
+      console.error('EventSource error:', error);
+      
+      // Only show connection error if we haven't received a complete event
+      if (!hasReceivedComplete && newEventSource.readyState !== EventSource.CLOSED) {
+        setStreamingEvents(prev => [...prev, {
+          id: `connection_error_${Date.now()}`,
+          type: 'error',
+          message: '🔄 Connection interrupted, retrying...',
+          timestamp: new Date().toISOString()
+        }]);
+      }
+      
+      // EventSource will automatically retry, but stop after too many failures
+      setTimeout(() => {
+        if (newEventSource.readyState === EventSource.CLOSED && !hasReceivedComplete) {
+          stopEventStream();
+        }
+      }, 5000);
+    };
+
+    newEventSource.onopen = () => {
+      console.log('EventSource connection opened');
+      setStreamingEvents(prev => [...prev, {
+        id: `connection_open_${Date.now()}`,
+        type: 'info',
+        message: '🔗 Connected to live updates',
+        timestamp: new Date().toISOString()
+      }]);
+    };
+
+    // Listen for the special 'complete' event type
+    newEventSource.addEventListener('complete', (event) => {
+      console.log('Received complete event:', event);
+      hasReceivedComplete = true; // Mark that we've received completion
+      
+      try {
+        const data = JSON.parse(event.data);
+        console.log('Complete event data:', data);
+        
+        // Use a timeout to ensure all agent results are captured
+        setTimeout(() => {
+          setAgentResults(currentResults => {
+            console.log('Building final result from:', currentResults);
+            const finalResult = buildFinalResultFromAgents(currentResults);
+            setResult(finalResult);
+            setAnalysisComplete(true);
+            setCurrentAgent(null);
+            
+            setStreamingEvents(prev => [...prev, {
+              id: `complete_${Date.now()}`,
+              type: 'success',
+              message: '✨ All processing completed successfully!',
+              timestamp: new Date().toISOString()
+            }]);
+            
+            return currentResults; // Return unchanged
+          });
+          
+          // Stop streaming when complete
+          setTimeout(() => stopEventStream(), 500); // Reduced delay
+        }, 100); // Small delay to ensure all state updates are processed
+        
+      } catch (error) {
+        console.error('Error parsing complete event:', error);
+        // Fallback: still stop streaming
+        setTimeout(() => stopEventStream(), 500);
+      }
+    });
+
+    return newEventSource;
+  };
+
+  // Function to stop streaming
+  const stopEventStream = () => {
+    if (eventSource) {
+      eventSource.close();
+      setEventSource(null);
+    }
+    setIsStreaming(false);
+    setCurrentRequestId(null);
+    // Keep agent states and grouped events for reference, but clear streaming state
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [eventSource]);
+
+  // Auto-scroll to latest event when new events are added
+  useEffect(() => {
+    if (streamingEvents.length > 0) {
+      const eventsContainer = document.querySelector('.events-container');
+      if (eventsContainer) {
+        eventsContainer.scrollTop = eventsContainer.scrollHeight;
+      }
+    }
+  }, [streamingEvents]);
 
   return (
     <div className="dashboard">
@@ -523,22 +904,55 @@ const Dashboard = () => {
                   className="submit-btn" 
                   disabled={loading || !idea.trim() || !isAgentPromptSelectionValid()}
                 >
-                  {loading ? 'Analyzing...' : 'Analyze Idea'}
+                  {loading ? (isStreaming ? 'Processing...' : 'Analyzing...') : 'Analyze Idea'}
                 </button>
               </form>
+
+              {/* Streaming Events Display */}
+              {isStreaming && (
+                <div className="streaming-events">
+                  <h3>Processing Progress</h3>
+                  
+                  {/* Current Agent Status */}
+                  {currentAgent && (
+                    <div className="current-agent-status">
+                      <div className={`agent-status-card ${currentAgent.status}`}>
+                        <div className="agent-name">{currentAgent.name}</div>
+                        <div className="agent-status">
+                          {currentAgent.status === 'thinking' ? '🤔 Analyzing...' : '✅ Complete'}
+                        </div>
+                        {currentAgent.result_snippet && (
+                          <div className="agent-preview">
+                            {currentAgent.result_snippet.substring(0, 100)}...
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Detailed Events */}
+                  {streamingEvents.length > 0 && (
+                    <div className="events-container">
+                      {streamingEvents.map((event) => (
+                        <div key={event.id} className={`event-item ${event.type}`}>
+                          <span className="event-timestamp">
+                            {new Date(event.timestamp).toLocaleTimeString()}
+                          </span>
+                          <span className="event-message">{event.message}</span>
+                          {event.agent && (
+                            <span className="event-agent">{event.agent}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="results-card">
               <h2>📊 Analysis Results</h2>
               <div className="results-content">
-                {loading && (
-                  <div className="loading">
-                    <div className="loading-spinner"></div>
-                    <p>Our AI agents are analyzing your startup idea...</p>
-                    <p>This may take a few moments.</p>
-                  </div>
-                )}
-
                 {error && (
                   <div className={`error ${error.type === 'prompt_injection' ? 'error-security' : ''}`}>
                     {error.type === 'prompt_injection' && (
@@ -558,73 +972,151 @@ const Dashboard = () => {
                   </div>
                 )}
 
-                {result && !loading && (
+                {result && analysisComplete && (
                   <div>
-                    {/* Market Verdict */}
-                    {result.market_verdict && (
-                      <div className="analysis-section">
-                        <h3>🧠 Market Analysis</h3>
-                        <p>{result.market_verdict}</p>
+                    {/* Individual Agent Analysis Cards */}
+                    {result.agents && Object.keys(result.agents).length > 0 && (
+                      <div className="agent-analysis-container">
+                        {Object.entries(result.agents).map(([agentName, agentData]) => (
+                          <div key={agentName} className="agent-analysis-card">
+                            <h3>
+                              {agentName === 'Market Research Agent' && '🧠'}
+                              {agentName === 'Financial Advisor' && '💰'}
+                              {agentName === 'Product Strategy Agent' && '📦'}
+                              {agentName === 'Summary Agent' && '📋'}
+                              {' '}
+                              {agentName}
+                            </h3>
+                            <div className="agent-content">
+                              {/* Summary */}
+                              {agentData.summary && (
+                                <div className="agent-field">
+                                  <strong>📝 Summary:</strong> {agentData.summary}
+                                </div>
+                              )}
+
+                              {/* Verdict */}
+                              {agentData.verdict && (
+                                <div className="agent-field">
+                                  <strong>🎯 Verdict:</strong>{' '}
+                                  <span className={`verdict-badge ${agentData.verdict.toLowerCase()}`}>
+                                    {agentData.verdict}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Viability Score */}
+                              {agentData.viability_score !== null && agentData.viability_score !== undefined && (
+                                <div className="agent-field">
+                                  <strong>📊 Viability Score:</strong>{' '}
+                                  <span className="score-display">
+                                    {agentData.viability_score}/10
+                                    <div className="score-bar-inline">
+                                      <div 
+                                        className="score-fill-inline" 
+                                        style={{ width: `${(agentData.viability_score / 10) * 100}%` }}
+                                      ></div>
+                                    </div>
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Show raw response if no structured data available */}
+                              {!agentData.summary && !agentData.verdict && agentData.viability_score === null && (
+                                <div className="agent-field">
+                                  <strong>📄 Response:</strong> {agentData.raw || 'No data available'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                     
-                    {/* Financial Verdict */}
-                    {result.financial_verdict && (
+                    {/* Final Recommendation (if available from Summary Agent) */}
+                    {result.final_recommendation && (
                       <div className="analysis-section">
-                        <h3>💰 Financial Analysis</h3>
-                        <p>{result.financial_verdict}</p>
-                      </div>
-                    )}
-                    
-                    {/* Product Verdict */}
-                    {result.product_verdict && (
-                      <div className="analysis-section">
-                        <h3>📦 Product Strategy</h3>
-                        <p>{result.product_verdict}</p>
-                      </div>
-                    )}
-                    
-                    {/* Final Recommendation */}
-                    <div className="analysis-section">
-                      <h3>🎯 Final Recommendation</h3>
-                      
-                      {result.final_recommendation && (
+                        <h3>🎯 Final Recommendation</h3>
+                        
                         <div className={getRecommendationStyle(result.final_recommendation)}>
                           {result.final_recommendation.toUpperCase()}
                         </div>
-                      )}
-                      
-                      {result.rationale && (
-                        <p style={{ marginTop: '15px' }}>{result.rationale}</p>
-                      )}
-                      
-                      {result.confidence_score !== undefined && (
-                        <div className="confidence-section" style={{ marginTop: '15px' }}>
-                          <h4 style={{ color: '#a855f7', fontSize: '1rem', marginBottom: '5px' }}>
-                            Confidence Score
-                          </h4>
-                          <div style={{ 
-                            fontSize: '2rem', 
-                            fontWeight: 'bold', 
-                            color: getConfidenceColor(result.confidence_score) 
-                          }}>
-                            {(result.confidence_score).toFixed(1)}/10
+                        
+                        {result.rationale && (
+                          <p style={{ marginTop: '15px' }}>{result.rationale}</p>
+                        )}
+                        
+                        {result.confidence_score !== undefined && (
+                          <div className="confidence-section" style={{ marginTop: '15px' }}>
+                            <h4 style={{ color: '#a855f7', fontSize: '1rem', marginBottom: '5px' }}>
+                              Confidence Score
+                            </h4>
+                            <div style={{ 
+                              fontSize: '2rem', 
+                              fontWeight: 'bold', 
+                              color: getConfidenceColor(result.confidence_score) 
+                            }}>
+                              {(typeof result.confidence_score === 'number' ? result.confidence_score : parseFloat(result.confidence_score) || 0).toFixed(1)}/10
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Fallback for summary if structured data is not available */}
-                    {result.summary && !result.market_verdict && (
-                      <div className="analysis-section">
-                        <h3>📝 Analysis Summary</h3>
-                        <p>{result.summary}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Legacy fallback display */}
+                    {(!result.agents || Object.keys(result.agents).length === 0) && (
+                      <div>
+                        {/* Market Verdict */}
+                        {result.market_verdict && (
+                          <div className="analysis-section">
+                            <h3>🧠 Market Analysis</h3>
+                            <p>{result.market_verdict}</p>
+                          </div>
+                        )}
+                        
+                        {/* Financial Verdict */}
+                        {result.financial_verdict && (
+                          <div className="analysis-section">
+                            <h3>💰 Financial Analysis</h3>
+                            <p>{result.financial_verdict}</p>
+                          </div>
+                        )}
+                        
+                        {/* Product Verdict */}
+                        {result.product_verdict && (
+                          <div className="analysis-section">
+                            <h3>📦 Product Strategy</h3>
+                            <p>{result.product_verdict}</p>
+                          </div>
+                        )}
+                        
+                        {/* Fallback for summary if structured data is not available */}
+                        {result.summary && !result.market_verdict && (
+                          <div className="analysis-section">
+                            <h3>📝 Analysis Summary</h3>
+                            <p>{result.summary}</p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 )}
 
-                {!loading && !result && !error && (
+                {/* Show streaming progress when not complete */}
+                {(loading || isStreaming) && !analysisComplete && (
+                  <div className="loading">
+                    <div className="loading-spinner"></div>
+                    <p>Our AI agents are analyzing your startup idea...</p>
+                    <p>This may take a few moments.</p>
+                    {Object.keys(agentResults).length > 0 && (
+                      <div className="partial-results">
+                        <p>📋 Results received from {Object.keys(agentResults).length} agent(s)...</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!loading && !isStreaming && !result && !error && (
                   <div className="empty-state">
                     Enter your startup idea and click "Analyze Idea" to get started.
                   </div>
