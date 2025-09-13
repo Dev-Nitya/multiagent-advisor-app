@@ -21,9 +21,14 @@ const costService = {
   },
 
   // Get cost breakdown by model
-  getCostByModel: async () => {
+  getCostByModel: async (userId) => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/cost-by-model`);
+      const params = new URLSearchParams();
+      if (userId) {
+        params.append('user_id', userId);
+      }
+      
+      const response = await axios.get(`${API_BASE_URL}/cost-by-model?${params.toString()}`);
       return {
         success: true,
         data: response.data

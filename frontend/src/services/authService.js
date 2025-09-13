@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 class AuthService {
   constructor() {
@@ -35,7 +35,7 @@ class AuthService {
 
   async register(userData) {
     try {
-      const response = await axios.post('/auth/register', userData);
+      const response = await axios.post(`${API_BASE_URL}/auth/register`, userData);
       const { access_token, user } = response.data;
       
       this.setAuth(access_token, user);
@@ -66,7 +66,7 @@ class AuthService {
 
   async login(email, password) {
     try {
-      const response = await axios.post('/auth/login', { email, password });
+      const response = await axios.post(`${API_BASE_URL}/auth/login`, { email, password });
       const { access_token, user } = response.data;
       
       this.setAuth(access_token, user);
@@ -97,7 +97,7 @@ class AuthService {
 
   async getProfile() {
     try {
-      const response = await axios.get('/auth/profile');
+      const response = await axios.get(`${API_BASE_URL}/auth/profile`);
       this.user = response.data;
       localStorage.setItem('user', JSON.stringify(this.user));
       return { success: true, user: this.user };
