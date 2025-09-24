@@ -322,69 +322,69 @@ const Dashboard = () => {
     return Object.values(agentPrompts).some(promptId => promptId !== '');
   };
 
+  // Helper function to extract JSON-like data from potentially malformed strings
+  const extractStructuredData = (text) => {
+    const extracted = {
+      summary: '',
+      verdict: '',
+      viability_score: null,
+      confidence_score: null
+    };
+
+    try {
+      // First try direct JSON parsing
+      const parsed = JSON.parse(text);
+      extracted.summary = parsed.summary || '';
+      extracted.verdict = parsed.verdict || '';
+      extracted.viability_score = parsed.viability_score || null;
+      // Ensure confidence_score is a number
+      if (parsed.confidence_score !== undefined) {
+        extracted.confidence_score = typeof parsed.confidence_score === 'string' 
+          ? parseFloat(parsed.confidence_score) 
+          : parsed.confidence_score;
+      }
+      return extracted;
+    } catch (e) {
+      // If direct parsing fails, try to extract using regex patterns
+      console.log(`Direct JSON parsing failed for text, trying pattern extraction:`, text.substring(0, 200));
+      
+      // Extract summary
+      const summaryMatch = text.match(/"summary":\s*"([^"]+)"/);
+      if (summaryMatch) {
+        extracted.summary = summaryMatch[1];
+      }
+
+      // Extract verdict
+      const verdictMatch = text.match(/"verdict":\s*"([^"]+)"/);
+      if (verdictMatch) {
+        extracted.verdict = verdictMatch[1];
+      }
+
+      // Extract viability_score (handle both quoted and unquoted numbers)
+      const scoreMatch = text.match(/"viability_score":\s*"?(\d+(?:\.\d+)?)"?/);
+      if (scoreMatch) {
+        extracted.viability_score = parseFloat(scoreMatch[1]);
+      }
+
+      // Extract confidence_score (handle both quoted and unquoted numbers)
+      const confidenceMatch = text.match(/"confidence_score":\s*"?(\d+(?:\.\d+)?)"?/);
+      if (confidenceMatch) {
+        extracted.confidence_score = parseFloat(confidenceMatch[1]);
+      }
+
+      // If no structured data found, put everything in summary
+      if (!extracted.summary && !extracted.verdict && extracted.viability_score === null) {
+        extracted.summary = text;
+      }
+
+      return extracted;
+    }
+  };
+
   // Helper function to build final result from agent results
   const buildFinalResultFromAgents = (agentResults) => {
     const result = {
       agents: {} // Store individual agent results
-    };
-    
-    // Helper function to extract JSON-like data from potentially malformed strings
-    const extractStructuredData = (text) => {
-      const extracted = {
-        summary: '',
-        verdict: '',
-        viability_score: null,
-        confidence_score: null
-      };
-
-      try {
-        // First try direct JSON parsing
-        const parsed = JSON.parse(text);
-        extracted.summary = parsed.summary || '';
-        extracted.verdict = parsed.verdict || '';
-        extracted.viability_score = parsed.viability_score || null;
-        // Ensure confidence_score is a number
-        if (parsed.confidence_score !== undefined) {
-          extracted.confidence_score = typeof parsed.confidence_score === 'string' 
-            ? parseFloat(parsed.confidence_score) 
-            : parsed.confidence_score;
-        }
-        return extracted;
-      } catch (e) {
-        // If direct parsing fails, try to extract using regex patterns
-        console.log(`Direct JSON parsing failed for text, trying pattern extraction:`, text.substring(0, 200));
-        
-        // Extract summary
-        const summaryMatch = text.match(/"summary":\s*"([^"]+)"/);
-        if (summaryMatch) {
-          extracted.summary = summaryMatch[1];
-        }
-
-        // Extract verdict
-        const verdictMatch = text.match(/"verdict":\s*"([^"]+)"/);
-        if (verdictMatch) {
-          extracted.verdict = verdictMatch[1];
-        }
-
-        // Extract viability_score (handle both quoted and unquoted numbers)
-        const scoreMatch = text.match(/"viability_score":\s*"?(\d+(?:\.\d+)?)"?/);
-        if (scoreMatch) {
-          extracted.viability_score = parseFloat(scoreMatch[1]);
-        }
-
-        // Extract confidence_score (handle both quoted and unquoted numbers)
-        const confidenceMatch = text.match(/"confidence_score":\s*"?(\d+(?:\.\d+)?)"?/);
-        if (confidenceMatch) {
-          extracted.confidence_score = parseFloat(confidenceMatch[1]);
-        }
-
-        // If no structured data found, put everything in summary
-        if (!extracted.summary && !extracted.verdict && extracted.viability_score === null) {
-          extracted.summary = text;
-        }
-
-        return extracted;
-      }
     };
     
     // Process each agent result and parse JSON data
@@ -486,6 +486,12 @@ const Dashboard = () => {
               graph_node: data.graph_node,
               started_at: data.ts
             });
+
+            // Track that this agent has started
+            setAgentStates(prev => ({
+              ...prev,
+              [data.agent]: 'thinking'
+            }));
             
             setStreamingEvents(prev => [...prev, {
               id: `${groupKey}_started_${Date.now()}`,
@@ -498,6 +504,12 @@ const Dashboard = () => {
             break;
 
           case 'agent_finished':
+            // Mark agent as finished
+            setAgentStates(prev => ({
+              ...prev,
+              [data.agent]: 'finished'
+            }));
+
             setCurrentAgent(prev => prev && prev.name === data.agent ? {
               ...prev,
               status: 'finished',
@@ -659,6 +671,146 @@ const Dashboard = () => {
       }
     }
   }, [streamingEvents]);
+
+  // Helper function to render agent results in streaming view
+  const renderAgentResult = (agentName, resultSnippet) => {
+    try {
+      // Try to parse as JSON first
+      const parsed = JSON.parse(resultSnippet);
+      
+      return (
+        <div className="streaming-agent-result">
+          {parsed.summary && (
+            <div className="result-field">
+              <strong>📝 Analysis:</strong>
+              <p>{parsed.summary}</p>
+            </div>
+          )}
+          
+          {parsed.verdict && (
+            <div className="result-field">
+              <strong>🎯 Verdict:</strong>
+              <span className={`verdict-badge ${parsed.verdict.toLowerCase()}`}>
+                {parsed.verdict}
+              </span>
+            </div>
+          )}
+          
+          {parsed.viability_score !== null && parsed.viability_score !== undefined && (
+            <div className="result-field">
+              <strong>📊 Viability Score:</strong>
+              <div className="score-display-inline">
+                <span className="score-value">{parsed.viability_score}/10</span>
+                <div className="score-bar-mini">
+                  <div 
+                    className="score-fill-mini" 
+                    style={{ width: `${(parsed.viability_score / 10) * 100}%` }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {parsed.final_recommendation && (
+            <div className="result-field">
+              <strong>🎯 Final Recommendation:</strong>
+              <div className="final-recommendation-badge">
+                {parsed.final_recommendation}
+              </div>
+              {parsed.rationale && (
+                <p className="rationale-text">{parsed.rationale}</p>
+              )}
+            </div>
+          )}
+
+          {parsed.confidence_score !== null && parsed.confidence_score !== undefined && (
+            <div className="result-field">
+              <strong>🎯 Confidence:</strong>
+              <span className="confidence-score">{parsed.confidence_score}/10</span>
+            </div>
+          )}
+        </div>
+      );
+    } catch (e) {
+      // If not JSON, try to extract structured data with regex
+      const extractStructuredData = (text) => {
+        const extracted = {
+          summary: null,
+          verdict: null,
+          viability_score: null,
+          confidence_score: null
+        };
+
+        // Extract summary
+        const summaryMatch = text.match(/"summary":\s*"([^"]+)"/);
+        if (summaryMatch) {
+          extracted.summary = summaryMatch[1];
+        }
+
+        // Extract verdict
+        const verdictMatch = text.match(/"verdict":\s*"([^"]+)"/);
+        if (verdictMatch) {
+          extracted.verdict = verdictMatch[1];
+        }
+
+        // Extract viability_score
+        const scoreMatch = text.match(/"viability_score":\s*"?(\d+(?:\.\d+)?)"?/);
+        if (scoreMatch) {
+          extracted.viability_score = parseFloat(scoreMatch[1]);
+        }
+
+        // Extract confidence_score
+        const confidenceMatch = text.match(/"confidence_score":\s*"?(\d+(?:\.\d+)?)"?/);
+        if (confidenceMatch) {
+          extracted.confidence_score = parseFloat(confidenceMatch[1]);
+        }
+
+        return extracted;
+      };
+
+      const structuredData = extractStructuredData(resultSnippet);
+      
+      return (
+        <div className="streaming-agent-result">
+          {structuredData.summary ? (
+            <div className="result-field">
+              <strong>📝 Analysis:</strong>
+              <p>{structuredData.summary}</p>
+            </div>
+          ) : (
+            <div className="result-field">
+              <strong>📄 Response:</strong>
+              <p>{resultSnippet.substring(0, 300)}{resultSnippet.length > 300 ? '...' : ''}</p>
+            </div>
+          )}
+          
+          {structuredData.verdict && (
+            <div className="result-field">
+              <strong>🎯 Verdict:</strong>
+              <span className={`verdict-badge ${structuredData.verdict.toLowerCase()}`}>
+                {structuredData.verdict}
+              </span>
+            </div>
+          )}
+          
+          {structuredData.viability_score !== null && (
+            <div className="result-field">
+              <strong>📊 Viability Score:</strong>
+              <div className="score-display-inline">
+                <span className="score-value">{structuredData.viability_score}/10</span>
+                <div className="score-bar-mini">
+                  <div 
+                    className="score-fill-mini" 
+                    style={{ width: `${(structuredData.viability_score / 10) * 100}%` }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+  };
 
   return (
     <div className="dashboard">
@@ -911,41 +1063,25 @@ const Dashboard = () => {
               {/* Streaming Events Display */}
               {isStreaming && (
                 <div className="streaming-events">
-                  <h3>Processing Progress</h3>
-                  
-                  {/* Current Agent Status */}
-                  {currentAgent && (
-                    <div className="current-agent-status">
-                      <div className={`agent-status-card ${currentAgent.status}`}>
-                        <div className="agent-name">{currentAgent.name}</div>
-                        <div className="agent-status">
-                          {currentAgent.status === 'thinking' ? '🤔 Analyzing...' : '✅ Complete'}
-                        </div>
-                        {currentAgent.result_snippet && (
-                          <div className="agent-preview">
-                            {currentAgent.result_snippet.substring(0, 100)}...
-                          </div>
-                        )}
+                  <h3>🔄 Live Analysis Progress</h3>
+                  <div className="events-container">
+                    {streamingEvents.map((event, index) => (
+                      <div key={index} className={`event-item ${event.type || 'info'}`}>
+                        <span className="event-timestamp">
+                          {new Date(event.timestamp).toLocaleTimeString([], { 
+                            hour12: false, 
+                            hour: '2-digit', 
+                            minute: '2-digit', 
+                            second: '2-digit' 
+                          })}
+                        </span>
+                        <span className="event-message">
+                          {event.message}
+                          {event.agent && <span className="event-agent">{event.agent}</span>}
+                        </span>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Detailed Events */}
-                  {streamingEvents.length > 0 && (
-                    <div className="events-container">
-                      {streamingEvents.map((event) => (
-                        <div key={event.id} className={`event-item ${event.type}`}>
-                          <span className="event-timestamp">
-                            {new Date(event.timestamp).toLocaleTimeString()}
-                          </span>
-                          <span className="event-message">{event.message}</span>
-                          {event.agent && (
-                            <span className="event-agent">{event.agent}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -969,6 +1105,61 @@ const Dashboard = () => {
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* Show streaming agent results as they complete */}
+                {isStreaming && Object.keys(agentResults).length > 0 && (
+                  <div className="agent-analysis-container">
+                    {Object.entries(agentResults).map(([agentName, resultSnippet]) => {
+                      const structuredData = extractStructuredData(resultSnippet);
+                      return (
+                        <div key={agentName} className="agent-analysis-card">
+                          <h3>
+                            {agentName === 'Market Research Agent' && '🧠'}
+                            {agentName === 'Financial Advisor' && '💰'}
+                            {agentName === 'Product Strategy Agent' && '📦'}
+                            {agentName === 'Summary Agent' && '📋'}
+                            {' '}
+                            {agentName} ✅
+                          </h3>
+                          <div className="agent-content">
+                            {structuredData.summary && (
+                              <div className="agent-field">
+                                <strong>📝 Summary:</strong> {structuredData.summary}
+                              </div>
+                            )}
+                            {structuredData.verdict && (
+                              <div className="agent-field">
+                                <strong>🎯 Verdict:</strong>{' '}
+                                <span className={`verdict-badge ${structuredData.verdict.toLowerCase()}`}>
+                                  {structuredData.verdict}
+                                </span>
+                              </div>
+                            )}
+                            {structuredData.viability_score !== null && structuredData.viability_score !== undefined && (
+                              <div className="agent-field">
+                                <strong>📊 Viability Score:</strong>{' '}
+                                <span className="score-display">
+                                  {structuredData.viability_score}/10
+                                  <div className="score-bar-inline">
+                                    <div 
+                                      className="score-fill-inline" 
+                                      style={{ width: `${(structuredData.viability_score / 10) * 100}%` }}
+                                    ></div>
+                                  </div>
+                                </span>
+                              </div>
+                            )}
+                            {!structuredData.summary && !structuredData.verdict && structuredData.viability_score === null && (
+                              <div className="agent-field">
+                                <strong>📄 Response:</strong> {resultSnippet || 'No data available'}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 

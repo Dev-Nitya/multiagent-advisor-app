@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
+import StreamingChat from './components/StreamingChat';
 import AdminPanel from './components/AdminPanel';
 import PromptsPage from './components/PromptsPage';
 import CostDashboard from './components/CostDashboard';
@@ -24,6 +25,12 @@ function App() {
             <Route path="/dashboard" element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            } />
+            
+            <Route path="/chat" element={
+              <ProtectedRoute>
+                <StreamingChat />
               </ProtectedRoute>
             } />
             

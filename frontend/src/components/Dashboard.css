@@ -998,6 +998,35 @@
   scroll-behavior: smooth;
 }
 
+/* Progress indicator for streaming */
+.progress-indicator {
+  margin-top: 15px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.progress-text {
+  color: #6b7280;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #10b981);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
   .streaming-events {
