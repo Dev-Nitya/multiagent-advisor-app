@@ -56,6 +56,8 @@ def record_agent_usage(
                 if derived_agent:
                     new_ctx["agent_id"] = derived_agent
 
+                print(f'Agent id getter: {derived_agent}')
+
                 try:
                     set_request_context(new_ctx)
                 except Exception:
@@ -85,21 +87,33 @@ def record_agent_usage(
                         note = (note + ("; " if note else "") + "aggregated_over_successful_requests")
 
                     try:
-                            
-                        prompt_id = prev_ctx.get("prompt_id")
+                        # Get the current agent ID to look up its specific prompt ID
+                        current_agent_id = prev_ctx.get("agent_id") or "unknown_agent"
+                        print(f'Current agent ID: {current_agent_id}')
+                        
+                        # Get agent-specific prompt IDs and fallback to global prompt_id  
+                        agent_prompt_ids = prev_ctx.get("agent_prompt_ids", {})
+                        prompt_id = agent_prompt_ids.get(current_agent_id) or prev_ctx.get("prompt_id")
+
+                        print(f'Current agent ID: {current_agent_id}')
+                        print(f'Agent Prompt IDs in context: {agent_prompt_ids}')
+                        print(f'Selected prompt_id for agent {current_agent_id}: {prompt_id}')
 
                         model_name = 'gpt-3.5-turbo'
                         try:
                             if prompt_id:
+                                print(f'Looking up model_name for prompt_id {prompt_id}')
                                 from services.prompt_registry import prompt_registry
                                 prompt_details = prompt_registry.get_prompt_by_id(prompt_id)
 
-                                # handle both dict results and ORM Prompt instances
+                                # handle both dict and ORM Prompt instances
                                 ms = None
                                 if isinstance(prompt_details, dict):
+                                    print(f'Prompt details: {prompt_details}')
                                     ms = prompt_details.get("model_settings")
                                 else:
                                     # ORM/other object: try attribute access
+                                    print(f'Prompt details (object): {prompt_details}')
                                     ms = getattr(prompt_details, "model_settings", None)
 
                                 # if model_settings stored as JSON string, attempt to parse
@@ -111,8 +125,12 @@ def record_agent_usage(
                                         pass
 
                                 if isinstance(ms, dict) and ms.get("model_name"):
+                                    print(f'Model Name from prompt_id {prompt_id}: {ms.get("model_name")}')
                                     model_name = ms.get("model_name")
-                        except Exception:
+                            else:
+                                print("No prompt_id found in context; using default model_name")
+                        except Exception as e:
+                            print(f"Failed to lookup model_name from prompt_id: {e}")
                             pass
                         
                         record_cost_event(

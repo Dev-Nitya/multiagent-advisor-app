@@ -27,7 +27,7 @@ def market_node(state: AgentState) -> AgentState:
     prev_node = ctx.get("graph_node_id")
     prev_agent = ctx.get("agent_id")
     ctx["graph_node_id"] = "market_node"
-    ctx["agent_id"] = "Market Research Agent"
+    ctx["agent_id"] = "market_research"
 
     try:
         result = CrewFactory.get_market_research_crew().kickoff(inputs={"idea": idea, "user_id": user_id, "request_id": request_id})
@@ -60,7 +60,7 @@ def finance_node(state: AgentState) -> AgentState:
     prev_node = ctx.get("graph_node_id")
     prev_agent = ctx.get("agent_id")
     ctx["graph_node_id"] = "finance_node"
-    ctx["agent_id"] = "Financial Advisor"
+    ctx["agent_id"] = "financial_advisor"
 
     try:
         result = CrewFactory.get_financial_analysis_crew().kickoff(
@@ -94,7 +94,7 @@ def product_node(state: AgentState) -> AgentState:
     prev_node = ctx.get("graph_node_id")
     prev_agent = ctx.get("agent_id")
     ctx["graph_node_id"] = "product_node"
-    ctx["agent_id"] = "Product Strategy Agent"
+    ctx["agent_id"] = "product_strategist"
 
     try:
         result = CrewFactory.get_product_strategy_crew().kickoff(inputs={"financial_insights": financial_insights, "idea": idea, "user_id": user_id, "request_id": request_id})
@@ -123,7 +123,7 @@ def summary_node(state: AgentState) -> AgentState:
     prev_node = ctx.get("graph_node_id")
     prev_agent = ctx.get("agent_id")
     ctx["graph_node_id"] = "summary_node"
-    ctx["agent_id"] = "Summary Agent"
+    ctx["agent_id"] = "summary_agent"
 
     try:
         result = CrewFactory.get_summary_crew().kickoff(inputs={

@@ -18,7 +18,15 @@ def create_product_strategist_agent(llm: Optional[BaseLLM] = None):
         "output_json": {
             "summary": "Evaluation of product uniqueness, technical feasibility, and UX potential (1-2 sentences).",
             "verdict": "viable / not viable / uncertain",
-            "viability_score": "A number between 0 and 10 based on product strength"
+            "viability_score": "A number between 0 and 10 based on product strength",
+            "product_strategy": {
+                "user_personas": [
+                    {"name": "string", "description": "string"}
+                ],
+                "must_have_features": ["string"],
+                "MVP_scope": "string",
+                "GTM_strategy": "string"
+            }
         }
     }
     

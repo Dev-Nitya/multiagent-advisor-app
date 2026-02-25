@@ -98,3 +98,7 @@ async def get_pool_stats():
 async def health_check():
     """Simple health check endpoint"""
     return {"status": "healthy", "service": "multi-agent-advisor"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
