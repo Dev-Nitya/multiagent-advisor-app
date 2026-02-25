@@ -7,6 +7,10 @@ An AI-powered startup idea evaluation platform that uses multiple specialized ag
 ![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB)
 ![CrewAI](https://img.shields.io/badge/CrewAI-Multi--Agent-orange.svg)
 
+### Demo
+
+![Multi Agent Advisor Demo](./docs/images/demo.gif)
+
 ## 📋 Table of Contents
 
 - [Features](#features)
@@ -217,8 +221,6 @@ npm start
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000
 - **API Documentation**: http://localhost:8000/docs
-- **Health Check**: http://localhost:8000/health
-- **Pool Statistics**: http://localhost:8000/health/pool-stats
 
 ### 4. Using the Application
 
@@ -256,35 +258,6 @@ Evaluates a startup idea using multiple AI agents.
   "final_recommendation": "launch",
   "rationale": "The combination of favorable market landscape...",
   "confidence_score": 9
-}
-```
-
-#### `GET /health`
-
-Basic health check endpoint.
-
-**Response:**
-
-```json
-{
-  "status": "healthy",
-  "service": "multi-agent-advisor"
-}
-```
-
-#### `GET /health/pool-stats`
-
-Get connection pool statistics for monitoring.
-
-**Response:**
-
-```json
-{
-  "cached_agents": 4,
-  "llm_pool_stats": {
-    "cached_llm_instances": 3,
-    "http_client_active": 1
-  }
 }
 ```
 
@@ -384,13 +357,10 @@ Different agents use optimized models for their complexity:
 
 #### **Performance Monitoring**
 
-Monitor connection pool health:
+The application provides built-in monitoring capabilities:
 
 ```bash
-# Check pool statistics
-curl http://localhost:8000/health/pool-stats
-
-# Response:
+# Pool statistics are available programmatically
 {
   "cached_agents": 4,
   "llm_pool_stats": {
@@ -494,43 +464,6 @@ def get_new_agent(cls) -> Agent:
 
 \*At least one LLM provider (OpenAI or Anthropic) is required.
 
-## 🚀 Deployment
-
-### Backend Deployment
-
-```bash
-# Install production dependencies
-pip install gunicorn
-
-# Run with Gunicorn
-gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
-```
-
-### Frontend Deployment
-
-```bash
-# Build for production
-npm run build
-
-# Serve static files
-npm install -g serve
-serve -s build
-```
-
-### Docker Deployment
-
-Create `Dockerfile` for containerized deployment:
-
-```dockerfile
-# Backend Dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -580,9 +513,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Monitoring & Operations
 
 - [ ] Add comprehensive logging and metrics
-- [ ] Implement health dashboards
 - [ ] Add automated performance testing
-- [ ] Create deployment automation
 - [ ] Add error tracking and alerting
 
 ---
